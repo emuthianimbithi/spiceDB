@@ -1,0 +1,46 @@
+definition namespace {
+    relation member: organization
+    relation metadata: namespace  // Add this line
+}
+
+definition organization {
+    relation member: role
+    relation parent_namespace: namespace
+    relation metadata: organization  // Add this line
+}
+
+definition user {
+    relation primary_role: role
+}
+
+definition role {
+    relation member: user | role#member
+    relation parent_organization: organization
+    relation parent_role: role
+    relation metadata: role  // Add this line
+
+    // Direct permission relationships
+    relation can_call_method: method
+    relation can_call_service: service
+    relation can_view_component: ui_component
+}
+
+definition service {
+    relation contains: method
+    relation caller: user | role | role#member
+    relation metadata: service  // Add this line
+    permission access = caller
+}
+
+definition method {
+    relation parent_service: service
+    relation caller: user | role#member
+    relation metadata: method  // Add this line
+    permission access = caller + parent_service->access
+}
+
+definition ui_component {
+    relation viewer: user | role#member
+    relation metadata: ui_component  // Add this line
+    permission view = viewer
+}
