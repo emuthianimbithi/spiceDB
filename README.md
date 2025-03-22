@@ -174,15 +174,98 @@ accessMap, err := pm.BatchCheckMethodAccess(ctx, "user@example.com",
 
 ### Running the Example
 
-1. Start SpiceDB (using Docker or another method):
+#### Setting up SpiceDB with PostgreSQL
+
+1. Make sure you have PostgreSQL running and create a database named `spicedb`:
    ```bash
-   docker run -p 50051:50051 authzed/spicedb serve --grpc-preshared-key "somerandomkeyhere"
+   psql -h localhost -U postgres -c "CREATE DATABASE spicedb;"
    ```
 
-2. Run the example application:
+2. Run the database migration to set up the SpiceDB schema:
+   ```bash
+   docker run --rm \
+     -e SPICEDB_DATASTORE_ENGINE=postgres \
+     -e SPICEDB_DATASTORE_CONN_URI="postgresql://postgres:password@host.docker.internal:5432/spicedb?sslmode=disable" \
+     authzed/spicedb:latest datastore migrate head
+   ```
+
+3. Start SpiceDB with PostgreSQL as the backend:
+   ```bash
+   docker run -p 50051:50051 \
+     --name spicedb \
+     -e SPICEDB_DATASTORE_ENGINE=postgres \
+     -e SPICEDB_DATASTORE_CONN_URI="postgresql://postgres:password@host.docker.internal:5432/spicedb?sslmode=disable" \
+     -e SPICEDB_GRPC_PRESHARED_KEY="somerandomkeyhere" \
+     authzed/spicedb:latest serve
+   ```
+
+   > **Note:** Replace `password` with your actual PostgreSQL password. For macOS/Windows, use `host.docker.internal` to connect to the host machine's PostgreSQL. For Linux, you may need to use `--network=host` or the host's actual IP address.
+
+4. Run the example application:
    ```bash
    go run main.go
    ```
+
+#### Alternative: Using Docker Compose
+
+For a more production-ready setup, you can use Docker Compose to run both PostgreSQL and SpiceDB:
+
+```yaml
+version: '3'
+
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: spicedb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    command: >
+      postgres
+      -c track_commit_timestamp=on
+
+  spicedb-migrate:
+    image: authzed/spicedb:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - SPICEDB_DATASTORE_ENGINE=postgres
+      - SPICEDB_DATASTORE_CONN_URI=postgresql://postgres:postgres@postgres:5432/spicedb?sslmode=disable
+    command: datastore migrate head
+    restart: on-failure
+
+  spicedb:
+    image: authzed/spicedb:latest
+    depends_on:
+      spicedb-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "50051:50051"
+    environment:
+      - SPICEDB_DATASTORE_ENGINE=postgres
+      - SPICEDB_DATASTORE_CONN_URI=postgresql://postgres:postgres@postgres:5432/spicedb?sslmode=disable
+      - SPICEDB_GRPC_PRESHARED_KEY=somerandomkeyhere
+    command: serve
+
+volumes:
+  postgres_data:
+```
+
+Save this as `docker-compose.yml` and run:
+
+```bash
+docker-compose up -d
+```
 
 ## Implementation Details
 
@@ -193,6 +276,10 @@ The schema uses self-referential metadata relations for each entity type. These 
 1. Mark an object's existence in SpiceDB (since SpiceDB creates objects implicitly)
 2. Store additional information about the objects
 3. Allow for listing all objects of a specific type
+
+```zed
+relation metadata: namespace  // Self-referential relation
+```
 
 ### Bidirectional Relationships
 
@@ -277,3 +364,7 @@ The `PermissionManager` provides methods for managing all aspects of the permiss
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
