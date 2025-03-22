@@ -364,7 +364,3 @@ The `PermissionManager` provides methods for managing all aspects of the permiss
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
